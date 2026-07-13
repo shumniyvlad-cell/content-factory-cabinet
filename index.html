@@ -110,6 +110,16 @@
     box-shadow:0 30px 80px -40px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.05)}
   .con-in{padding:26px 26px 22px}
   .con-q{font-size:15px;color:var(--ink2);font-weight:300;margin-bottom:18px}
+  .prompt{display:flex;align-items:center;gap:13px;background:rgba(0,0,0,.35);border:1px solid var(--hair);
+    border-radius:12px;padding:0 16px;height:54px;margin-bottom:18px;transition:border-color .35s var(--out),box-shadow .35s var(--out)}
+  .prompt:focus-within{border-color:rgba(232,176,107,.45);box-shadow:0 0 0 3px rgba(232,176,107,.07)}
+  .prompt svg{width:17px;height:17px;stroke:var(--mut);flex-shrink:0}
+  .prompt:focus-within svg{stroke:var(--gold)}
+  .prompt input{flex:1;background:none;border:none;outline:none;color:var(--ink);font-family:var(--sans);
+    font-size:15px;font-weight:400;min-width:0}
+  .prompt input::placeholder{color:var(--mut);font-weight:300}
+  .prompt kbd{font-family:var(--mono);font-size:10px;color:var(--mut);border:1px solid var(--hair);
+    border-radius:6px;padding:3px 8px;letter-spacing:.06em;flex-shrink:0}
   .chips{display:flex;flex-wrap:wrap;gap:9px}
   .chip{display:inline-flex;align-items:center;gap:9px;height:38px;padding:0 15px;border-radius:10px;cursor:pointer;
     background:var(--s2);border:1px solid var(--hair2);font-size:13px;font-weight:500;color:var(--ink2);
@@ -435,7 +445,14 @@ function vHome(){
   <h1 class="hero">Что запускаем<br>в производство <span class="grad">сегодня?</span></h1></div>
   <div class="console rv">
     <div class="con-in">
-      <div class="con-q">Выбери нишу — движок найдёт залетевшие рилсы, перепишет их под бренд и соберёт готовые ролики.</div>
+      <div class="con-q">Напиши свою нишу — движок найдёт залетевшие рилсы, перепишет их под бренд и соберёт готовые ролики.</div>
+      <div class="prompt">${svg('refs')}
+        <input id="nq" placeholder="Например: детейлинг авто, барбершоп, керамика ручной работы…"
+          value="${S.niche==='custom'?(S.customName||''):''}"
+          onkeydown="if(event.key==='Enter')setCustom(this.value,true)"
+          oninput="document.getElementById('launch').disabled=!(this.value.trim()||S.niche)">
+        <kbd>ENTER</kbd>
+      </div>
       <div class="chips">${D.niches.map(n=>`
         <div class="chip ${S.niche===n.id?'on':''}" onclick="pickNiche('${n.id}')">
           ${svg(IC.niche[n.id])}${n.name}
@@ -444,8 +461,7 @@ function vHome(){
       </div>
     </div>
     <div class="con-foot">
-      <span class="con-hint">apify · gemini · ffmpeg — на связи</span>
-      <button class="btn grad" id="launch" ${S.niche?'':'disabled'} onclick="launch()">Запустить конвейер ${svg('arrow')}</button>
+      <button class="btn grad" id="launch" ${S.niche?'':'disabled'} onclick="launchFromConsole()">Запустить конвейер ${svg('arrow')}</button>
     </div>
   </div>
   <div class="sect rv">производство за неделю</div>
@@ -463,11 +479,29 @@ function vHome(){
     </div>`).join('')}
   </div>`;
 }
+function curNiche(){
+  if(S.niche==='custom')return{id:'custom',name:S.customName||'своя ниша',tags:S.customTags||[],status:'live'};
+  return D.niches.find(x=>x.id===S.niche);
+}
 function pickNiche(id){
   if(S.niche!==id){S.niche=id;S.scanned=false;S.refs.clear();S.generated=false;}
-  const n=D.niches.find(x=>x.id===id);
-  document.getElementById('nichLbl').textContent=n.name;
+  document.getElementById('nichLbl').textContent=curNiche().name;
   unlockUpTo('refs');paint();
+}
+function setCustom(txt,run){
+  txt=(txt||'').trim();if(!txt)return;
+  S.niche='custom';S.customName=txt[0].toUpperCase()+txt.slice(1);
+  S.customTags=txt.toLowerCase().split(/[^а-яёa-z0-9]+/).filter(w=>w.length>2).slice(0,4).map(w=>'#'+w);
+  S.scanned=false;S.refs.clear();S.generated=false;
+  document.getElementById('nichLbl').textContent=S.customName;
+  unlockUpTo('refs');
+  run?go('refs'):paint();
+}
+function launchFromConsole(){
+  const q=document.getElementById('nq');
+  if(q&&q.value.trim()&&S.niche!=='custom'||q&&q.value.trim()&&q.value.trim()!==(S.customName||''))
+    return setCustom(q.value,true);
+  if(S.niche)go('refs');
 }
 function launch(){ if(S.niche) go('refs'); }
 /* hover-play с самовосстановлением: браузер может глушить видео сразу после play() —
@@ -483,7 +517,7 @@ function hp(el,on){
 const segShort=s=>(s||'').split(/[\d(—\/]/)[0].trim().replace(/[,·\s]+$/,'')||'эксперт';
 
 function vRefs(){
-  const n=D.niches.find(x=>x.id===S.niche)||{name:'—',tags:[]};
+  const n=curNiche()||{name:'—',tags:[]};
   if(!S.scanned){
     return `<div class="rv"><div class="eyebrow"><i></i>шаг 1 · трендвочинг</div>
     <h2 class="vt">Скан ниши «${n.name}»</h2>
@@ -512,7 +546,7 @@ function vRefs(){
     </div>`;}).join('')}</div>`;
 }
 function runScan(){
-  const n=D.niches.find(x=>x.id===S.niche);
+  const n=curNiche();
   const log=document.getElementById('tlog'),bar=document.getElementById('sbar');
   const handles=[...new Set(D.references.map(r=>r.handle))];
   const lines=[
