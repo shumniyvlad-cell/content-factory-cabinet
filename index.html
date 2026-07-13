@@ -379,10 +379,7 @@
     <span class="chev">▾</span>
   </div>
   <div class="flow-dots" id="dots"></div>
-  <div class="live" id="liveBox"><span class="dot"></span>apify <b id="liveSt">demo</b></div>
-  <div class="keybtn" id="keyBtn" title="API-ключи (хранятся только в твоём браузере)" onclick="openKeys()">
-    <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8.5" cy="13.5" r="4.5"/><path d="M12 10.5L20 3M16 7l2.5 2.5M13.5 9.5l2 2"/></svg>
-  </div>
+  <div class="live" id="liveBox"><span class="dot"></span>движок <b id="liveSt">…</b></div>
   <div class="ava" title="Влад Шумный"><i>ВШ</i></div>
 </header>
 
@@ -413,11 +410,18 @@
 const D=window.CF_DATA;
 const fmt=n=>n.toLocaleString('ru-RU');
 
-/* ═══ живой режим: ключи только в localStorage браузера ═══ */
+/* ═══ живой режим: все ключи на сервере, кабинет ходит через прокси завода ═══ */
+const PROXY='https://krutimai.ru/cf-api';
 let KEYS={apify:'',gemini:''};
 try{KEYS={...KEYS,...JSON.parse(localStorage.getItem('cf_keys')||'{}')}}catch(e){}
 const mode=()=>S.niche==='custom'?'real':'demo';
-const hasKeys=()=>!!(KEYS.apify&&KEYS.gemini);
+const hasKeys=()=>S.proxyOk===true;
+function probeProxy(){
+  fetch(PROXY+'/health',{cache:'no-store'}).then(r=>r.json())
+    .then(d=>{S.proxyOk=!!d.ok;syncLive();
+      if(S.proxyOk&&S.niche==='custom'&&!S.scanned&&S.view==='refs')paint();})
+    .catch(()=>{S.proxyOk=false;syncLive();});
+}
 function openKeys(){document.getElementById('kApify').value=KEYS.apify;document.getElementById('kGemini').value=KEYS.gemini;
   document.getElementById('veil').classList.add('show');}
 function closeKeys(){document.getElementById('veil').classList.remove('show');}
@@ -425,8 +429,8 @@ function saveKeys(){KEYS.apify=document.getElementById('kApify').value.trim();KE
   localStorage.setItem('cf_keys',JSON.stringify(KEYS));closeKeys();syncLive();
   toast('Ключи сохранены','Только в этом браузере (localStorage). Живой режим включён.');
   if(S.niche==='custom'&&!S.scanned&&S.view==='refs')paint();}
-function syncLive(){const st=document.getElementById('liveSt');if(st)st.textContent=hasKeys()?'online':'demo';
-  document.getElementById('keyBtn').classList.toggle('ok',hasKeys());}
+function syncLive(){const st=document.getElementById('liveSt');
+  if(st)st.textContent=S.proxyOk===true?'online':(S.proxyOk===false?'offline':'…');}
 const activeRefs=()=>mode()==='real'?(S.realRefs||[]):D.references;
 const activeScripts=()=>mode()==='real'?(S.realScripts||[]):D.scripts;
 
@@ -443,10 +447,10 @@ async function realScan(){
     if(el)el.textContent=Math.round((Date.now()-t0)/1000)+'с';},500);
   ln(`<span class="ac">⋯</span> скрейпинг Instagram <span class="dim">(обычно 8–40с)</span> · <span class="ac" id="elapsed">0с</span>`);
   try{
-    const r=await fetch(`https://api.apify.com/v2/acts/apify~instagram-hashtag-scraper/run-sync-get-dataset-items?token=${encodeURIComponent(KEYS.apify)}&format=json&clean=true`,
+    const r=await fetch(`${PROXY}/scan`,
       {method:'POST',headers:{'Content-Type':'application/json'},
-       body:JSON.stringify({hashtags:tags.slice(0,2),resultsLimit:25})});
-    if(!r.ok)throw new Error('HTTP '+r.status+(r.status===401?' — проверь Apify-токен':''));
+       body:JSON.stringify({hashtags:tags.slice(0,2),limit:25})});
+    if(!r.ok)throw new Error('HTTP '+r.status);
     const items=await r.json();clearInterval(tick);bar.style.width='72%';
     let posts=(Array.isArray(items)?items:[]).filter(i=>i&&i.ownerUsername);
     posts.sort((a,b)=>((b.videoViewCount||0)-(a.videoViewCount||0))||((b.likesCount||0)-(a.likesCount||0)));
@@ -478,7 +482,7 @@ async function realScripts(){
     required:["title","segment","format","hook","scenes","caption","hashtags","duration"]}}},required:["scripts"]};
   const prompt=`Ты сценарист вирусных вертикальных Reels. Ниша: «${n.name}». Реальные посты из этой ниши (Instagram, сегодня):\n${ctx||'(нет контекста)'}\n\nНапиши 3 РАЗНЫХ сценария Reels (20-35 сек) для бизнеса в этой нише: разные углы (боль клиента / закулисье / цифры), сильный хук в первые 2 сек, 4-5 сцен (кадр, закадровый голос, титр на экране), продающая подпись, 4-6 хэштегов, hаштеги с решёткой. Язык русский, живой, без канцелярита. duration в секундах.`;
   try{
-    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(KEYS.gemini)}`,
+    const r=await fetch(`${PROXY}/gemini/gemini-2.5-flash:generateContent`,
       {method:'POST',headers:{'Content-Type':'application/json'},
        body:JSON.stringify({contents:[{parts:[{text:prompt}]}],
          generationConfig:{responseMimeType:'application/json',responseSchema:schema,temperature:.9}})});
@@ -510,7 +514,7 @@ async function realFrames(){
     if(st)st.textContent=`кадр ${i+1}/${list.length}`;
     const prompt=`Vertical 9:16 cinematic photo, premium dark aesthetic for a short video cover. Business niche: ${curNiche().name}. Scene: ${s.scenes[0]?.shot||s.title}. Moody lighting, high detail, photorealistic. No readable text, no numbers, no watermarks, no logos.`;
     try{
-      const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent?key=${encodeURIComponent(KEYS.gemini)}`,
+      const r=await fetch(`${PROXY}/gemini/gemini-3.1-flash-image:generateContent`,
         {method:'POST',headers:{'Content-Type':'application/json'},
          body:JSON.stringify({contents:[{parts:[{text:prompt}]}],
            generationConfig:{responseModalities:['TEXT','IMAGE'],imageConfig:{aspectRatio:'9:16'}}})});
@@ -657,7 +661,6 @@ function setCustom(txt,run){
   resetPipeline();
   document.getElementById('nichLbl').textContent=S.customName;
   unlockUpTo('refs');
-  if(run&&!hasKeys()){openKeys();}
   run?go('refs'):paint();
 }
 function launchFromConsole(){
@@ -684,11 +687,12 @@ function vRefs(){
   if(!S.scanned){
     if(mode()==='real'&&!hasKeys()){
       return `<div class="rv"><div class="eyebrow"><i></i>шаг 1 · трендвочинг · живой режим</div>
-      <h2 class="vt">Нужны ключи API</h2>
-      <div class="vsub">Ниша «${n.name}» ищется по-настоящему: браузер сам сходит в Apify (посты Instagram по хэштегам)
-        и в Gemini (сценарии). Ключи сохраняются только в этом браузере.</div>
+      <h2 class="vt">${S.proxyOk===false?'Движок недоступен':'Подключаюсь к движку…'}</h2>
+      <div class="vsub">${S.proxyOk===false
+        ?'Живой поиск временно недоступен — движок завода не отвечает. Попробуй ещё раз через минуту.'
+        :'Проверяю связь с движком завода — секунда.'}</div>
       <div style="height:18px"></div>
-      <button class="btn grad" style="margin-left:0" onclick="openKeys()">Ввести ключи ${svg('arrow')}</button></div>`;
+      <button class="btn grad" style="margin-left:0" onclick="probeProxy();setTimeout(paint,600)">Повторить ${svg('arrow')}</button></div>`;
     }
     return `<div class="rv"><div class="eyebrow"><i></i>шаг 1 · трендвочинг${mode()==='real'?' · live':''}</div>
     <h2 class="vt">Скан ниши «${n.name}»</h2>
@@ -929,7 +933,7 @@ function toast(t,s){const el=document.getElementById('toast');
   document.getElementById('toastT').textContent=t;document.getElementById('toastS').textContent=s;
   el.classList.add('show');clearTimeout(_tt);_tt=setTimeout(()=>el.classList.remove('show'),3600);}
 
-paint();syncLive();
+paint();syncLive();probeProxy();
 document.getElementById('view').classList.add('in');
 </script>
 </body>
