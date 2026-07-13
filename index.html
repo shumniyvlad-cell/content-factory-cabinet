@@ -314,7 +314,37 @@
     box-shadow:0 26px 60px -20px rgba(0,0,0,.9);transition:transform .55s var(--spring),opacity .4s;opacity:0}
   .dock.show{transform:translateX(-50%) translateY(0);opacity:1}
   .dock .di{font-size:12.5px;color:var(--ink2)} .dock .di b{color:var(--ink);font-weight:600}
-  .toast{position:fixed;top:74px;right:22px;z-index:60;display:flex;gap:12px;align-items:flex-start;max-width:330px;
+  /* keys modal */
+  .veil{position:fixed;inset:0;z-index:70;background:rgba(5,5,7,.7);backdrop-filter:blur(8px);
+    display:none;place-items:center;opacity:0;transition:opacity .35s var(--out)}
+  .veil.show{display:grid;opacity:1}
+  .modal{width:min(520px,92vw);background:#131318;border:1px solid var(--hair);border-radius:18px;padding:26px;
+    box-shadow:0 40px 100px -30px rgba(0,0,0,.9);transform:translateY(16px) scale(.98);transition:transform .45s var(--spring)}
+  .veil.show .modal{transform:none}
+  .modal h3{font-family:var(--disp);font-weight:600;font-size:19px;margin-bottom:8px}
+  .modal .ms{font-size:12.5px;color:var(--ink2);line-height:1.55;margin-bottom:18px}
+  .modal .ms b{color:var(--mint);font-weight:500}
+  .modal label{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--mut);margin:14px 0 7px}
+  .modal input{width:100%;height:44px;background:rgba(0,0,0,.4);border:1px solid var(--hair);border-radius:10px;
+    color:var(--ink);font-family:var(--mono);font-size:12px;padding:0 14px;outline:none;transition:border-color .3s}
+  .modal input:focus{border-color:rgba(232,176,107,.45)}
+  .modal .mrow{display:flex;gap:10px;margin-top:22px;justify-content:flex-end}
+  .keybtn{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;cursor:pointer;
+    background:var(--s1);border:1px solid var(--hair);transition:all .3s var(--out)}
+  .keybtn:hover{background:var(--s2)}
+  .keybtn svg{width:16px;height:16px;stroke:var(--ink2)}
+  .keybtn.ok svg{stroke:var(--mint)}
+  .demoTag{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--gold2);background:rgba(232,176,107,.08);border:1px solid rgba(232,176,107,.25);
+    border-radius:8px;padding:6px 10px;margin-left:12px}
+  .refc .th img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .refc .ext{position:absolute;right:9px;bottom:8px;font-family:var(--mono);font-size:9px;color:rgba(255,255,255,.85);
+    background:rgba(0,0,0,.55);padding:3px 7px;border-radius:6px;opacity:0;transition:opacity .3s;backdrop-filter:blur(4px)}
+  .refc:hover .ext{opacity:1}
+  .frame-note{font-size:12px;color:var(--mut);border:1px dashed var(--hair);border-radius:10px;padding:12px 16px;
+    margin-top:18px;line-height:1.5}
+  .toast{position:fixed;top:74px;right:22px;z-index:80;display:flex;gap:12px;align-items:flex-start;max-width:330px;
     background:rgba(18,19,23,.92);border:1px solid rgba(87,230,168,.35);border-radius:13px;padding:14px 16px;
     backdrop-filter:blur(20px);box-shadow:0 24px 60px -20px rgba(0,0,0,.9);
     transform:translateX(30px);opacity:0;transition:all .5s var(--spring)}
@@ -349,9 +379,28 @@
     <span class="chev">▾</span>
   </div>
   <div class="flow-dots" id="dots"></div>
-  <div class="live"><span class="dot"></span>apify <b>online</b></div>
+  <div class="live" id="liveBox"><span class="dot"></span>apify <b id="liveSt">demo</b></div>
+  <div class="keybtn" id="keyBtn" title="API-ключи (хранятся только в твоём браузере)" onclick="openKeys()">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8.5" cy="13.5" r="4.5"/><path d="M12 10.5L20 3M16 7l2.5 2.5M13.5 9.5l2 2"/></svg>
+  </div>
   <div class="ava" title="Влад Шумный"><i>ВШ</i></div>
 </header>
+
+<div class="veil" id="veil" onclick="if(event.target===this)closeKeys()">
+  <div class="modal">
+    <h3>Живой режим · API-ключи</h3>
+    <div class="ms">Для реального поиска любой ниши кабинет ходит в Apify и Gemini <b>прямо из твоего браузера</b>.
+      Ключи сохраняются только в localStorage этого браузера — в код, репозиторий и на сервер они не попадают.</div>
+    <label>Apify token · apify.com → Settings → Integrations</label>
+    <input id="kApify" type="password" placeholder="apify_api_…" autocomplete="off">
+    <label>Gemini API key · aistudio.google.com/apikey</label>
+    <input id="kGemini" type="password" placeholder="AIza…" autocomplete="off">
+    <div class="mrow">
+      <button class="btn ghost" onclick="closeKeys()">Позже</button>
+      <button class="btn grad" style="margin-left:0" onclick="saveKeys()">Сохранить</button>
+    </div>
+  </div>
+</div>
 
 <nav class="rail" id="rail"></nav>
 <main class="stage"><div class="view" id="view"></div></main>
@@ -363,6 +412,114 @@
 <script>
 const D=window.CF_DATA;
 const fmt=n=>n.toLocaleString('ru-RU');
+
+/* ═══ живой режим: ключи только в localStorage браузера ═══ */
+let KEYS={apify:'',gemini:''};
+try{KEYS={...KEYS,...JSON.parse(localStorage.getItem('cf_keys')||'{}')}}catch(e){}
+const mode=()=>S.niche==='custom'?'real':'demo';
+const hasKeys=()=>!!(KEYS.apify&&KEYS.gemini);
+function openKeys(){document.getElementById('kApify').value=KEYS.apify;document.getElementById('kGemini').value=KEYS.gemini;
+  document.getElementById('veil').classList.add('show');}
+function closeKeys(){document.getElementById('veil').classList.remove('show');}
+function saveKeys(){KEYS.apify=document.getElementById('kApify').value.trim();KEYS.gemini=document.getElementById('kGemini').value.trim();
+  localStorage.setItem('cf_keys',JSON.stringify(KEYS));closeKeys();syncLive();
+  toast('Ключи сохранены','Только в этом браузере (localStorage). Живой режим включён.');
+  if(S.niche==='custom'&&!S.scanned&&S.view==='refs')paint();}
+function syncLive(){const st=document.getElementById('liveSt');if(st)st.textContent=hasKeys()?'online':'demo';
+  document.getElementById('keyBtn').classList.toggle('ok',hasKeys());}
+const activeRefs=()=>mode()==='real'?(S.realRefs||[]):D.references;
+const activeScripts=()=>mode()==='real'?(S.realScripts||[]):D.scripts;
+
+/* реальный скан ниши: Apify hashtag-scraper из браузера */
+async function realScan(){
+  const n=curNiche(),log=document.getElementById('tlog'),bar=document.getElementById('sbar');
+  const ln=(h)=>{if(document.getElementById('tlog'))log.insertAdjacentHTML('beforeend',`<div class="ln">${h}</div>`)};
+  const tags=(S.customTags&&S.customTags.length?S.customTags:['#'+(n.name||'ниша').toLowerCase().replace(/\s+/g,'')]).map(t=>t.replace('#',''));
+  ln(`<span class="dim">$</span> factory trends-pull --niche "${n.name}" --source apify <span class="dim">· live</span>`);
+  ln(`<span class="ac">→</span> POST api.apify.com/v2/acts/apify~instagram-hashtag-scraper`);
+  ln(`<span class="dim">·</span> хэштеги: ${tags.map(t=>'#'+t).join(' ')} · до 25 постов`);
+  bar.style.width='18%';
+  const t0=Date.now();const tick=setInterval(()=>{const el=document.getElementById('elapsed');
+    if(el)el.textContent=Math.round((Date.now()-t0)/1000)+'с';},500);
+  ln(`<span class="ac">⋯</span> скрейпинг Instagram <span class="dim">(обычно 8–40с)</span> · <span class="ac" id="elapsed">0с</span>`);
+  try{
+    const r=await fetch(`https://api.apify.com/v2/acts/apify~instagram-hashtag-scraper/run-sync-get-dataset-items?token=${encodeURIComponent(KEYS.apify)}&format=json&clean=true`,
+      {method:'POST',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({hashtags:tags.slice(0,2),resultsLimit:25})});
+    if(!r.ok)throw new Error('HTTP '+r.status+(r.status===401?' — проверь Apify-токен':''));
+    const items=await r.json();clearInterval(tick);bar.style.width='72%';
+    let posts=(Array.isArray(items)?items:[]).filter(i=>i&&i.ownerUsername);
+    posts.sort((a,b)=>((b.videoViewCount||0)-(a.videoViewCount||0))||((b.likesCount||0)-(a.likesCount||0)));
+    const top=posts.slice(0,12);
+    const maxL=Math.max(1,...top.map(p=>p.likesCount||0)),maxV=Math.max(1,...top.map(p=>p.videoViewCount||0));
+    S.realRefs=top.map((p,i)=>({handle:p.ownerUsername,url:p.url||('https://www.instagram.com/p/'+p.shortCode+'/'),
+      views:p.videoViewCount||0,likes:p.likesCount||0,caption:(p.caption||'').slice(0,160),thumb:p.displayUrl||'',
+      score:Math.round(30*Math.max((p.videoViewCount||0)/maxV,(p.likesCount||0)/maxL,(12-i)/12*.4))}));
+    ln(`<span class="ok">✓</span> получено <span class="ac">${posts.length}</span> постов · отобран топ-${top.length} по вовлечению`);
+    ln(`<span class="ok">✓</span> готово за ${Math.round((Date.now()-t0)/1000)}с`);
+    bar.style.width='100%';
+    setTimeout(()=>{S.scanned=true;S.refs=new Set(S.realRefs.slice(0,6).map((_,k)=>k));
+      unlockUpTo('scripts');paint();toast('Живой скан завершён',`#${tags[0]} · ${top.length} реальных постов из Instagram`);},700);
+  }catch(e){clearInterval(tick);
+    ln(`<span style="color:#e0655a">✗</span> ${String(e.message||e).slice(0,120)}`);
+    ln(`<span class="dim">проверь ключи (иконка ключа сверху) или попробуй другую формулировку ниши</span>`);
+  }
+}
+
+/* реальные сценарии: Gemini пишет под нишу на основе найденных постов */
+async function realScripts(){
+  S.scriptsLoading=true;paint();
+  const n=curNiche();
+  const ctx=(S.realRefs||[]).slice(0,6).map(r=>`@${r.handle} (${r.likes} лайков): ${r.caption}`).join('\n');
+  const schema={type:"object",properties:{scripts:{type:"array",items:{type:"object",properties:{
+    title:{type:"string"},segment:{type:"string"},format:{type:"string"},hook:{type:"string"},
+    scenes:{type:"array",items:{type:"object",properties:{shot:{type:"string"},vo:{type:"string"},on:{type:"string"}},required:["shot","vo","on"]}},
+    caption:{type:"string"},hashtags:{type:"array",items:{type:"string"}},duration:{type:"integer"}},
+    required:["title","segment","format","hook","scenes","caption","hashtags","duration"]}}},required:["scripts"]};
+  const prompt=`Ты сценарист вирусных вертикальных Reels. Ниша: «${n.name}». Реальные посты из этой ниши (Instagram, сегодня):\n${ctx||'(нет контекста)'}\n\nНапиши 3 РАЗНЫХ сценария Reels (20-35 сек) для бизнеса в этой нише: разные углы (боль клиента / закулисье / цифры), сильный хук в первые 2 сек, 4-5 сцен (кадр, закадровый голос, титр на экране), продающая подпись, 4-6 хэштегов, hаштеги с решёткой. Язык русский, живой, без канцелярита. duration в секундах.`;
+  try{
+    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(KEYS.gemini)}`,
+      {method:'POST',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({contents:[{parts:[{text:prompt}]}],
+         generationConfig:{responseMimeType:'application/json',responseSchema:schema,temperature:.9}})});
+    if(!r.ok)throw new Error('Gemini HTTP '+r.status);
+    const d=await r.json();
+    const out=JSON.parse(d.candidates[0].content.parts[0].text);
+    S.realScripts=(out.scripts||[]).slice(0,3).map((s,i)=>({id:i+1,title:s.title,segment:s.segment,format:s.format,
+      hooks:[s.hook],scenes:s.scenes||[],caption:s.caption,hashtags:s.hashtags||[],duration:s.duration||30,
+      visual:'',video:''}));
+    S.scripts=new Set(S.realScripts.map(s=>s.id));
+    S.scriptsLoading=false;unlockUpTo('gen');paint();
+    toast('Сценарии готовы',`Gemini написал ${S.realScripts.length} сценария под «${n.name}»`);
+  }catch(e){S.scriptsLoading=false;paint();toast('Ошибка генерации',humanErr(e));}
+}
+function humanErr(e){
+  const s=String(e&&e.message||e);
+  if(s.includes('429'))return 'На Gemini-ключе кончились кредиты/квота — пополни в AI Studio (ai.studio/projects) и повтори.';
+  if(s.includes('403')||s.includes('401'))return 'Ключ не принят — проверь его в настройках (иконка ключа сверху).';
+  if(s.includes('Failed to fetch'))return 'Сеть/блокировка запроса. Проверь интернет или VPN.';
+  return s.slice(0,140);
+}
+
+/* реальные hero-кадры: nano-banana (Gemini image) */
+async function realFrames(){
+  const list=activeScripts().filter(s=>S.scripts.has(s.id));
+  S.realFrames=S.realFrames||{};
+  for(let i=0;i<list.length;i++){
+    const s=list[i];const st=document.getElementById('pd1');
+    if(st)st.textContent=`кадр ${i+1}/${list.length}`;
+    const prompt=`Vertical 9:16 cinematic photo, premium dark aesthetic for a short video cover. Business niche: ${curNiche().name}. Scene: ${s.scenes[0]?.shot||s.title}. Moody lighting, high detail, photorealistic. No readable text, no numbers, no watermarks, no logos.`;
+    try{
+      const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent?key=${encodeURIComponent(KEYS.gemini)}`,
+        {method:'POST',headers:{'Content-Type':'application/json'},
+         body:JSON.stringify({contents:[{parts:[{text:prompt}]}],
+           generationConfig:{responseModalities:['TEXT','IMAGE'],imageConfig:{aspectRatio:'9:16'}}})});
+      const d=await r.json();
+      const part=(d.candidates?.[0]?.content?.parts||[]).find(p=>p.inlineData);
+      if(part)S.realFrames[s.id]='data:image/png;base64,'+part.inlineData.data;
+    }catch(e){/* кадр пропускаем, не роняем конвейер */}
+  }
+}
 const IC={
   home:'<path d="M4 12l8-8 8 8"/><path d="M6 10v10h12V10"/>',
   refs:'<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
@@ -411,7 +568,10 @@ function paint(){
   const v=document.getElementById('view');
   v.innerHTML=({home:vHome,refs:vRefs,scripts:vScripts,gen:vGen,pub:vPub})[S.view]();
   reveal();dock();
-  if(S.view==='refs'&&!S.scanned)runScan();
+  if(S.view==='refs'&&!S.scanned&&!S.scanning){
+    if(mode()==='demo')runScan();
+    else if(hasKeys()){S.scanning=true;realScan().finally(()=>S.scanning=false);}
+  }
 }
 function reveal(){
   document.querySelectorAll('.rv').forEach((e,i)=>setTimeout(()=>e.classList.add('go'),50+i*55));
@@ -483,8 +643,10 @@ function curNiche(){
   if(S.niche==='custom')return{id:'custom',name:S.customName||'своя ниша',tags:S.customTags||[],status:'live'};
   return D.niches.find(x=>x.id===S.niche);
 }
+function resetPipeline(){S.scanned=false;S.refs.clear();S.generated=false;S.generating=false;
+  S.realRefs=null;S.realScripts=null;S.realFrames={};S.scriptsLoading=false;S.scripts=new Set();}
 function pickNiche(id){
-  if(S.niche!==id){S.niche=id;S.scanned=false;S.refs.clear();S.generated=false;}
+  if(S.niche!==id){S.niche=id;resetPipeline();}
   document.getElementById('nichLbl').textContent=curNiche().name;
   unlockUpTo('refs');paint();
 }
@@ -492,9 +654,10 @@ function setCustom(txt,run){
   txt=(txt||'').trim();if(!txt)return;
   S.niche='custom';S.customName=txt[0].toUpperCase()+txt.slice(1);
   S.customTags=txt.toLowerCase().split(/[^а-яёa-z0-9]+/).filter(w=>w.length>2).slice(0,4).map(w=>'#'+w);
-  S.scanned=false;S.refs.clear();S.generated=false;
+  resetPipeline();
   document.getElementById('nichLbl').textContent=S.customName;
   unlockUpTo('refs');
+  if(run&&!hasKeys()){openKeys();}
   run?go('refs'):paint();
 }
 function launchFromConsole(){
@@ -519,30 +682,44 @@ const segShort=s=>(s||'').split(/[\d(—\/]/)[0].trim().replace(/[,·\s]+$/,'')|
 function vRefs(){
   const n=curNiche()||{name:'—',tags:[]};
   if(!S.scanned){
-    return `<div class="rv"><div class="eyebrow"><i></i>шаг 1 · трендвочинг</div>
+    if(mode()==='real'&&!hasKeys()){
+      return `<div class="rv"><div class="eyebrow"><i></i>шаг 1 · трендвочинг · живой режим</div>
+      <h2 class="vt">Нужны ключи API</h2>
+      <div class="vsub">Ниша «${n.name}» ищется по-настоящему: браузер сам сходит в Apify (посты Instagram по хэштегам)
+        и в Gemini (сценарии). Ключи сохраняются только в этом браузере.</div>
+      <div style="height:18px"></div>
+      <button class="btn grad" style="margin-left:0" onclick="openKeys()">Ввести ключи ${svg('arrow')}</button></div>`;
+    }
+    return `<div class="rv"><div class="eyebrow"><i></i>шаг 1 · трендвочинг${mode()==='real'?' · live':''}</div>
     <h2 class="vt">Скан ниши «${n.name}»</h2>
-    <div class="vsub">Живой запрос к Apify: тянем свежие рилсы доноров и считаем виральность — просмотры на подписчика важнее абсолютных чисел.</div></div>
+    <div class="vsub">${mode()==='real'
+      ?'Живой запрос из твоего браузера: Apify тянет реальные посты Instagram по хэштегам ниши, движок ранжирует по вовлечению.'
+      :'Демо-датасет: этот скан движок уже прогнал по-настоящему из локального цеха.'}</div></div>
     <div class="term rv"><div class="term-h"><i></i><i></i><i></i><span>apify · run-sync-get-dataset-items</span></div>
       <div class="term-b" id="tlog"></div>
       <div class="term-b" style="min-height:0;padding-top:0"><div class="scanbar"><i id="sbar"></i></div></div>
     </div>`;
   }
+  const refs=activeRefs();
   const col=s=>s>=20?'#57e6a8':s>=12?'#e8b06b':'#62666e';
   return `<div class="rv"><div class="eyebrow"><i></i>шаг 1 · трендвочинг · ${n.name}</div>
-  <h2 class="vt">Залетевшие референсы</h2>
-  <div class="vsub">Отобрано и отсортировано по score. Кольцо — виральность: сколько раз ролик перекрыл собственную аудиторию.</div></div>
+  <h2 class="vt" style="display:flex;align-items:center">Залетевшие референсы
+    ${mode()==='demo'?'<span class="demoTag">демо-датасет · собран движком</span>':'<span class="demoTag" style="color:var(--mint);background:rgba(87,230,168,.08);border-color:rgba(87,230,168,.25)">live · instagram</span>'}</h2>
+  <div class="vsub">${mode()==='real'?'Реальные посты по хэштегам ниши, ранжированы по вовлечению. Клик по превью — открыть в Instagram.':'Кольцо — виральность: сколько раз ролик перекрыл собственную аудиторию.'}</div></div>
   <div style="height:22px"></div>
-  <div class="rgrid">${D.references.map((r,i)=>{
+  <div class="rgrid">${refs.map((r,i)=>{
     const on=S.refs.has(i),c=col(r.score),p=Math.min(r.score,30)/30;
     return `<div class="refc rv ${on?'sel':''}" onclick="tg('refs',${i})">
       <span class="ck">${svg('check')}</span>
-      <div class="th"><div class="pp"><i>${svg('play')}</i></div>
+      <div class="th">${r.thumb?`<img src="${r.thumb}" referrerpolicy="no-referrer" loading="lazy" onerror="this.remove()">`:''}
+        <div class="pp"><i onclick="event.stopPropagation();window.open('${r.url}','_blank')" title="Открыть в Instagram">${svg('play')}</i></div>
         <div class="ring"><svg viewBox="0 0 40 40" width="40" height="40">
           <circle class="bgc" cx="20" cy="20" r="17" fill="none" stroke-width="3"/>
           <circle class="fgc" cx="20" cy="20" r="17" fill="none" stroke-width="3" stroke="${c}" data-p="${p}"/></svg>
           <span class="val" style="color:${c}">${r.score.toFixed(0)}</span></div>
-        <span class="hnd">@${r.handle}</span></div>
-      <div class="rmeta"><span><b>${fmt(r.views)}</b> просм</span><span><b>${fmt(r.likes)}</b> ❤</span></div>
+        <span class="hnd">@${r.handle}</span>
+        <span class="ext">открыть в IG ↗</span></div>
+      <div class="rmeta"><span><b>${r.views?fmt(r.views):'—'}</b> просм</span><span><b>${fmt(r.likes)}</b> ❤</span></div>
     </div>`;}).join('')}</div>`;
 }
 function runScan(){
@@ -575,11 +752,27 @@ function runScan(){
 }
 
 function vScripts(){
-  return `<div class="rv"><div class="eyebrow"><i></i>шаг 2 · сценарная</div>
-  <h2 class="vt">Сценарии под бренд</h2>
+  if(S.scriptsLoading){
+    return `<div class="rv"><div class="eyebrow"><i></i>шаг 2 · сценарная · live</div>
+    <h2 class="vt">Сценарная пишет</h2>
+    <div class="vsub">Gemini читает найденные посты ниши «${curNiche().name}» и пишет 3 сценария под неё — хук, сцены, титры, подпись.</div></div>
+    <div class="pipe rv"><div class="pstep act"><span class="pi"><span class="spin"></span></span>
+      <span class="pt">Анализ трендов ниши → 3 сценария</span><span class="pd">~10–20с</span></div></div>`;
+  }
+  const list=activeScripts();
+  if(mode()==='real'&&!list.length){
+    return `<div class="rv"><div class="eyebrow"><i></i>шаг 2 · сценарная</div>
+    <h2 class="vt">Сценариев пока нет</h2>
+    <div class="vsub">Gemini пишет их по живым постам ниши. Если была ошибка — чаще всего дело в ключе или кредитах AI Studio.</div>
+    <div style="height:18px"></div>
+    <button class="btn grad" style="margin-left:0" onclick="realScripts()">Написать сценарии · Gemini ${svg('arrow')}</button></div>`;
+  }
+  return `<div class="rv"><div class="eyebrow"><i></i>шаг 2 · сценарная${mode()==='real'?' · live':''}</div>
+  <h2 class="vt" style="display:flex;align-items:center">Сценарии под бренд
+    ${mode()==='real'?'<span class="demoTag" style="color:var(--mint);background:rgba(87,230,168,.08);border-color:rgba(87,230,168,.25)">написаны Gemini · сейчас</span>':''}</h2>
   <div class="vsub">Вирусная структура референсов переписана под голос бренда — это адаптация, не копия. Клик — в производство, стрелка — раскадровка.</div></div>
   <div style="height:22px"></div>
-  <div class="sgrid">${D.scripts.map(s=>{
+  <div class="sgrid">${list.map(s=>{
     const on=S.scripts.has(s.id);
     return `<div class="scard rv ${on?'sel':''}" id="sc${s.id}">
       <span class="ck" onclick="event.stopPropagation();tg('scripts',${s.id})">${svg('check')}</span>
@@ -612,16 +805,35 @@ function vGen(){
       <h4>${g.name}<span class="kb p">фото</span></h4><p>${g.desc}</p></div>`).join('')}</div>`;
 }
 function vGenRun(){
-  return `<div class="rv"><div class="eyebrow"><i></i>шаг 3 · цех генерации</div>
+  const steps=mode()==='real'
+    ?['Сценарии → промпты кадров','Hero-кадры · nano-banana (live)','Озвучка · Gemini TTS · очередь цеха','Сборка mp4 · ffmpeg · очередь цеха']
+    :['Сценарии → промпты сцен','Генерация кадров и видео','Озвучка · Gemini TTS','Сборка · титры · уникализация'];
+  return `<div class="rv"><div class="eyebrow"><i></i>шаг 3 · цех генерации${mode()==='real'?' · live':''}</div>
   <h2 class="vt">Конвейер работает</h2>
   <div class="vsub">${S.scripts.size} роликов · движок ${D.generators.find(g=>g.id===S.gen)?.name||''}</div></div>
   <div class="pipe rv" id="pipe">
-    ${['Сценарии → промпты сцен','Генерация кадров и видео','Озвучка · Gemini TTS','Сборка · титры · уникализация'].map((t,i)=>`
+    ${steps.map((t,i)=>`
       <div class="pstep" id="ps${i}"><span class="pi">${i+1}</span><span class="pt">${t}</span><span class="pd" id="pd${i}"></span></div>`).join('')}
   </div>`;
 }
 function vGenDone(){
-  const list=[...S.scripts].sort((a,b)=>a-b).map(id=>D.scripts.find(s=>s.id===id));
+  const list=activeScripts().filter(s=>S.scripts.has(s.id));
+  if(mode()==='real'){
+    return `<div class="rv"><div class="eyebrow"><i></i>шаг 3 · цех генерации · live</div>
+    <h2 class="vt" style="display:flex;align-items:center">Hero-кадры готовы
+      <span class="demoTag" style="color:var(--mint);background:rgba(87,230,168,.08);border-color:rgba(87,230,168,.25)">nano-banana · сейчас</span></h2>
+    <div class="vsub">Кадры сгенерированы вживую под «${curNiche().name}». Озвучка и сборка mp4 — задачи локального цеха (ffmpeg), они уже в очереди.</div></div>
+    <div style="height:22px"></div>
+    <div class="vgrid">${list.map(s=>`
+      <div class="vc rv"><div class="vw">
+        ${S.realFrames&&S.realFrames[s.id]
+          ?`<img src="${S.realFrames[s.id]}" style="width:100%;height:100%;object-fit:cover;display:block">`
+          :`<div style="position:absolute;inset:0;display:grid;place-items:center;color:var(--mut);font-family:var(--mono);font-size:11px">кадр не сгенерился</div>`}
+      </div>
+      <div class="vi"><div class="vt2">${s.title}</div><div class="vs">${segShort(s.segment)} · ~${s.duration}с · hero-кадр</div></div>
+      </div>`).join('')}</div>
+    <div class="frame-note rv">mp4-ролики (озвучка Gemini TTS + титры + Ken Burns) собирает локальный цех завода — как 6 готовых роликов в демо-нише «Франшиза кофеен».</div>`;
+  }
   return `<div class="rv"><div class="eyebrow"><i></i>шаг 3 · цех генерации</div>
   <h2 class="vt">Готовые ролики</h2>
   <div class="vsub">1080×1920 · озвучка + титры · наведи курсор — ролик играет со звуком по клику.</div></div>
@@ -635,6 +847,7 @@ function vGenDone(){
 }
 function startGen(){
   S.generating=true;paint();
+  if(mode()==='real'){realGenRun();return;}
   const durs=[900,1400,1100,1300];let i=0;
   const step=()=>{
     const el=document.getElementById('ps'+i);if(!el)return;
@@ -645,6 +858,18 @@ function startGen(){
   };
   setTimeout(step,300);
 }
+async function realGenRun(){
+  const mark=(i,run)=>{const el=document.getElementById('ps'+i);if(!el)return;
+    if(run){el.classList.add('act');document.getElementById('pd'+i).innerHTML='<span class="spin"></span>';}
+    else{el.classList.remove('act');el.classList.add('done');el.querySelector('.pi').innerHTML=svg('check');
+      const pd=document.getElementById('pd'+i);if(pd&&!pd.textContent.includes('очеред'))pd.textContent='готово';}};
+  await new Promise(r=>setTimeout(r,350));
+  mark(0,true);await new Promise(r=>setTimeout(r,800));mark(0,false);
+  mark(1,true);await realFrames();mark(1,false);
+  for(const i of[2,3]){mark(i,true);await new Promise(r=>setTimeout(r,700));
+    document.getElementById('pd'+i).textContent='в очереди цеха';mark(i,false);}
+  finishGen();
+}
 function finishGen(){
   setTimeout(()=>{S.generating=false;S.generated=true;unlockUpTo('pub');paint();
     toast('Ролики собраны',`${S.scripts.size} шт · озвучка + титры · готовы к публикации`);},500);
@@ -652,7 +877,8 @@ function finishGen(){
 
 function vPub(){
   const nS=S.scripts.size,nP=S.plats.size;
-  const list=[...S.scripts].sort((a,b)=>a-b).map(id=>D.scripts.find(s=>s.id===id));
+  const list=activeScripts().filter(s=>S.scripts.has(s.id));
+  const poster=s=>mode()==='real'?((S.realFrames||{})[s.id]||''):s.visual;
   const plats=[...S.plats].map(id=>D.platforms.find(p=>p.id===id));
   return `<div class="rv"><div class="eyebrow"><i></i>шаг 4 · дистрибуция</div>
   <h2 class="vt">Публикация</h2>
@@ -668,7 +894,7 @@ function vPub(){
     <div class="tot rv"><div class="n" data-count="${nS*nP}">0</div><div class="l">публикаций в очереди</div></div>
   </div>
   <div class="sect rv">очередь</div>
-  ${list.map(s=>`<div class="q rv"><span class="qi" style="background-image:url('${s.visual}')"></span>
+  ${list.map(s=>`<div class="q rv"><span class="qi" style="background-image:url('${poster(s)}')"></span>
     <div><div class="qn">${s.title}</div><div class="qm">${segShort(s.segment)} · ~${s.duration}с</div></div>
     <div class="qp">${plats.map(p=>`<span class="tagp">${p.name}</span>`).join('')}</div></div>`).join('')}`;
 }
@@ -679,8 +905,11 @@ function tg(k,id){const set=S[k];set.has(id)?set.delete(id):set.add(id);
 function dock(){
   const d=document.getElementById('dock');let html='',show=false;
   if(S.view==='refs'&&S.scanned){show=S.refs.size>0;
-    html=`<span class="di">Выбрано <b>${S.refs.size}</b> референсов</span>
-    <button class="btn white" onclick="S.scripts=new Set(D.scripts.map(s=>s.id));unlockUpTo('scripts');go('scripts')">Сценарии по ним ${svg('arrow')}</button>`;}
+    html=mode()==='real'
+      ?`<span class="di">Выбрано <b>${S.refs.size}</b> референсов</span>
+        <button class="btn white" onclick="unlockUpTo('scripts');go('scripts');setTimeout(realScripts,300)">Сценарии по ним · Gemini ${svg('arrow')}</button>`
+      :`<span class="di">Выбрано <b>${S.refs.size}</b> референсов</span>
+        <button class="btn white" onclick="S.scripts=new Set(D.scripts.map(s=>s.id));unlockUpTo('scripts');go('scripts')">Сценарии по ним ${svg('arrow')}</button>`;}
   if(S.view==='scripts'){show=S.scripts.size>0;
     html=`<span class="di">В производство: <b>${S.scripts.size}</b></span>
     <button class="btn white" onclick="unlockUpTo('gen');go('gen')">В цех генерации ${svg('arrow')}</button>`;}
@@ -700,7 +929,7 @@ function toast(t,s){const el=document.getElementById('toast');
   document.getElementById('toastT').textContent=t;document.getElementById('toastS').textContent=s;
   el.classList.add('show');clearTimeout(_tt);_tt=setTimeout(()=>el.classList.remove('show'),3600);}
 
-paint();
+paint();syncLive();
 document.getElementById('view').classList.add('in');
 </script>
 </body>
