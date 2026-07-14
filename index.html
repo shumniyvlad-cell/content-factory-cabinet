@@ -225,7 +225,7 @@
   .scard .ck{position:absolute;top:18px;right:18px;left:auto}
   .scard.sel .ck{background:var(--mint);border-color:var(--mint)}
   .sb-w{overflow:hidden;transition:max-height .55s var(--out);max-height:0}
-  .scard.open .sb-w{max-height:600px}
+  .scard.open .sb-w{max-height:1400px}
   .sb{border-top:1px solid var(--hair2);margin-top:14px;padding-top:12px}
   .sb .row{display:grid;grid-template-columns:18px 1fr;gap:10px;padding:6px 0;font-size:12px;color:var(--ink2);line-height:1.5}
   .sb .row i{font-family:var(--disp);color:var(--gold);font-weight:600;font-size:11px;font-style:normal}
@@ -445,47 +445,60 @@ async function realScan(){
   bar.style.width='18%';
   const t0=Date.now();const tick=setInterval(()=>{const el=document.getElementById('elapsed');
     if(el)el.textContent=Math.round((Date.now()-t0)/1000)+'с';},500);
-  ln(`<span class="ac">⋯</span> ступень 1: авторы ниши по хэштегам · <span class="ac" id="elapsed">0с</span>`);
+  ln(`<span class="ac">⋯</span> ступень 1: топ-аккаунты рынка + авторы хэштегов <span class="dim">(параллельно)</span> · <span class="ac" id="elapsed">0с</span>`);
   try{
-    // Ступень 1: посты хэштега → уникальные авторы ниши (recent-выдача, метрик почти нет — она только для имён)
-    const r1=await fetch(`${PROXY}/scan`,
-      {method:'POST',headers:{'Content-Type':'application/json'},
-       body:JSON.stringify({hashtags:tags.slice(0,2),limit:25})});
-    if(!r1.ok)throw new Error('HTTP '+r1.status);
-    const posts=((await r1.json())||[]).filter(i=>i&&i.ownerUsername);
-    bar.style.width='34%';
+    // Ступень 1 (параллельно): поиск КРУПНЫХ аккаунтов ниши + авторы из хэштег-выдачи
+    const [ra,rh]=await Promise.all([
+      fetch(`${PROXY}/accounts`,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({query:n.name,limit:10})}).then(r=>r.ok?r.json():[]).catch(()=>[]),
+      fetch(`${PROXY}/scan`,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({hashtags:tags.slice(0,2),limit:25})}).then(r=>r.ok?r.json():[]).catch(()=>[]),
+    ]);
+    bar.style.width='38%';
+    const profiles=(Array.isArray(ra)?ra:[]).filter(p=>p&&p.username&&!p.private);
+    profiles.sort((a,b)=>(b.followersCount||0)-(a.followersCount||0));
+    const followersBy={};profiles.forEach(p=>followersBy[p.username]=p.followersCount||0);
+    const posts=(Array.isArray(rh)?rh:[]).filter(i=>i&&i.ownerUsername);
     const byAuthor={};
     posts.forEach(p=>{const u=p.ownerUsername;
       if(!byAuthor[u]||(p.likesCount||0)>byAuthor[u])byAuthor[u]=p.likesCount||0;});
-    const authors=Object.entries(byAuthor).sort((a,b)=>b[1]-a[1]).map(([u])=>u).slice(0,6);
-    if(!authors.length)throw new Error('по этим хэштегам никого не нашли — попробуй другую формулировку');
-    ln(`<span class="ok">✓</span> авторы ниши: ${authors.map(a=>'@'+a).join(' ')}`);
-    ln(`<span class="ac">⋯</span> ступень 2: тяну их свежие рилсы с просмотрами <span class="dim">(20–60с)</span>`);
-    // Ступень 2: рилсы авторов — только видео, с реальными просмотрами
+    const hashtagAuthors=Object.entries(byAuthor).sort((a,b)=>b[1]-a[1]).map(([u])=>u);
+    const pool=[...new Set([...profiles.slice(0,5).map(p=>p.username),...hashtagAuthors])].slice(0,8);
+    if(!pool.length)throw new Error('по этой нише никого не нашли — попробуй другую формулировку');
+    const fmtF=x=>x>=1e6?(x/1e6).toFixed(1)+'M':x>=1e3?(x/1e3).toFixed(1)+'k':x;
+    if(profiles.length)ln(`<span class="ok">✓</span> крупняк рынка: ${profiles.slice(0,4).map(p=>'@'+p.username+' <span class="dim">('+fmtF(p.followersCount||0)+')</span>').join(' ')}`);
+    if(hashtagAuthors.length)ln(`<span class="ok">✓</span> авторы хэштегов: ${hashtagAuthors.slice(0,4).map(a=>'@'+a).join(' ')}`);
+    ln(`<span class="ac">⋯</span> ступень 2: рилсы ${pool.length} авторов, ищу залетевшие <span class="dim">(20–60с)</span>`);
+    // Ступень 2: рилсы пула — только видео, реальные просмотры
     const r2=await fetch(`${PROXY}/reels`,
       {method:'POST',headers:{'Content-Type':'application/json'},
-       body:JSON.stringify({usernames:authors,limit:5})});
+       body:JSON.stringify({usernames:pool,limit:5})});
     if(!r2.ok)throw new Error('HTTP '+r2.status);
     let reels=((await r2.json())||[]).filter(i=>i&&i.ownerUsername&&(i.url||i.shortCode));
     clearInterval(tick);bar.style.width='84%';
     const vv=p=>p.videoViewCount||p.videoPlayCount||0;
     reels.sort((a,b)=>(vv(b)-vv(a))||((b.likesCount||0)-(a.likesCount||0)));
     let top=reels.slice(0,12);
-    // фолбэк: если рилсов совсем нет — показываем лучшие посты ступени 1, честно без просмотров
     if(top.length<3){
       posts.sort((a,b)=>(b.likesCount||0)-(a.likesCount||0));
       top=posts.slice(0,12);
-      ln(`<span class="dim">рилсов мало — добавил лучшие посты хэштега</span>`);
+      ln(`<span class="dim">рилсов мало — добавил лучшие посты хэштегов</span>`);
     }
-    const maxV=Math.max(1,...top.map(p=>vv(p)||0)),maxL=Math.max(1,...top.map(p=>p.likesCount||0));
-    S.realRefs=top.map((p,i)=>({handle:p.ownerUsername,url:p.url||('https://www.instagram.com/p/'+p.shortCode+'/'),
-      views:vv(p),likes:p.likesCount||0,caption:(p.caption||'').slice(0,160),thumb:p.displayUrl||'',
-      score:Math.round(30*Math.max(vv(p)/maxV,(p.likesCount||0)/maxL*.8,(12-i)/12*.3))}));
-    ln(`<span class="ok">✓</span> рилсов с просмотрами: <span class="ac">${top.length}</span> · отранжированы по виральности`);
+    const maxV=Math.max(1,...top.map(p=>vv(p)||0));
+    S.realRefs=top.map((p,i)=>{
+      const foll=followersBy[p.ownerUsername]||0;
+      // виральность: просмотры на подписчика (если знаем базу), иначе перцентиль по батчу
+      const ratio=foll>0?vv(p)/foll:0;
+      const score=Math.round(30*Math.max(ratio/(ratio+3),vv(p)/maxV*.85));
+      return {handle:p.ownerUsername,url:p.url||('https://www.instagram.com/p/'+p.shortCode+'/'),
+        views:vv(p),likes:p.likesCount||0,caption:(p.caption||'').slice(0,200),thumb:p.displayUrl||'',
+        followers:foll,score:Math.max(score,3)};});
+    const best=Math.max(...S.realRefs.map(r=>r.views));
+    ln(`<span class="ok">✓</span> залетевшие: <span class="ac">${top.length}</span> рилсов · топ <span class="ac">${fmtF(best)}</span> просмотров`);
     ln(`<span class="ok">✓</span> готово за ${Math.round((Date.now()-t0)/1000)}с`);
     bar.style.width='100%';
     setTimeout(()=>{S.scanned=true;S.refs=new Set(S.realRefs.slice(0,6).map((_,k)=>k));
-      unlockUpTo('scripts');paint();toast('Живой скан завершён',`#${tags[0]} · ${top.length} рилсов авторов ниши`);},700);
+      unlockUpTo('scripts');paint();toast('Живой скан завершён',`${top.length} рилсов рынка · топ ${fmtF(best)} просмотров`);},700);
   }catch(e){clearInterval(tick);
     ln(`<span style="color:#e0655a">✗</span> ${String(e.message||e).slice(0,140)}`);
     ln(`<span class="dim">попробуй другую формулировку ниши или повтори через минуту</span>`);
@@ -496,32 +509,44 @@ async function realScan(){
 async function realScripts(){
   S.scriptsLoading=true;paint();
   const n=curNiche();
-  const ctx=(S.realRefs||[]).slice(0,6).map(r=>`@${r.handle} (${r.likes} лайков): ${r.caption}`).join('\n');
+  const refs=(S.realRefs||[]).slice(0,6);
+  const ctx=refs.map(r=>`@${r.handle} · ${r.views?r.views+' просмотров':''} ${r.likes} лайков: ${r.caption}`).join('\n');
   const schema={type:"object",properties:{scripts:{type:"array",items:{type:"object",properties:{
-    title:{type:"string"},segment:{type:"string"},format:{type:"string"},hook:{type:"string"},
+    title:{type:"string"},segment:{type:"string"},format:{type:"string"},
+    hooks:{type:"array",items:{type:"string"}},
     scenes:{type:"array",items:{type:"object",properties:{shot:{type:"string"},vo:{type:"string"},on:{type:"string"}},required:["shot","vo","on"]}},
-    caption:{type:"string"},hashtags:{type:"array",items:{type:"string"}},duration:{type:"integer"}},
-    required:["title","segment","format","hook","scenes","caption","hashtags","duration"]}}},required:["scripts"]};
-  const prompt=`Ты сценарист вирусных вертикальных Reels. Ниша: «${n.name}». Реальные посты из этой ниши (Instagram, сегодня):\n${ctx||'(нет контекста)'}\n\nНапиши 3 РАЗНЫХ сценария Reels (20-35 сек) для бизнеса в этой нише: разные углы (боль клиента / закулисье / цифры), сильный хук в первые 2 сек, 4-5 сцен (кадр, закадровый голос, титр на экране), продающая подпись, 4-6 хэштегов, hаштеги с решёткой. Язык русский, живой, без канцелярита. duration в секундах.`;
+    caption:{type:"string"},cta:{type:"string"},hashtags:{type:"array",items:{type:"string"}},duration:{type:"integer"}},
+    required:["title","segment","format","hooks","scenes","caption","cta","hashtags","duration"]}}},required:["scripts"]};
+  const prompt=`Ты топ-сценарист вирусных вертикальных Reels (продакшн-уровень, не наброски). Ниша бизнеса: «${n.name}».
+Реальные ЗАЛЕТЕВШИЕ ролики этой ниши прямо сейчас (Instagram, с просмотрами):
+${ctx||'(нет контекста)'}
+
+Напиши 3 РАЗНЫХ детальных сценария Reels (30–45 сек) для бизнеса в этой нише. Углы: боль клиента / закулисье-процесс / цифры-доказательство. Требования к КАЖДОМУ сценарию:
+— hooks: 3 варианта хука на первые 2 секунды (цепляют, без клише);
+— scenes: 6–8 сцен, и каждая сцена ДЕТАЛЬНО: shot = что конкретно в кадре (локация, действие, крупность плана, реквизит), vo = закадровый голос 1–2 живых разговорных предложения, on = титр на экране до 6 слов;
+— caption: продающая подпись 2–3 предложения;
+— cta: финальный призыв (подписка/директ/кодовое слово);
+— hashtags: 5–8 штук с решёткой; duration в секундах.
+Язык русский, живой, разговорный, без канцелярита и слова «представьте». Вирусную СТРУКТУРУ референсов адаптируй, текст не копируй.`;
   try{
     const r=await fetch(`${PROXY}/gemini/gemini-2.5-flash:generateContent`,
       {method:'POST',headers:{'Content-Type':'application/json'},
        body:JSON.stringify({contents:[{parts:[{text:prompt}]}],
-         generationConfig:{responseMimeType:'application/json',responseSchema:schema,temperature:.9}})});
-    if(!r.ok)throw new Error('Gemini HTTP '+r.status);
+         generationConfig:{responseMimeType:'application/json',responseSchema:schema,temperature:.9,maxOutputTokens:8192}})});
+    if(!r.ok)throw new Error('движок HTTP '+r.status);
     const d=await r.json();
     const out=JSON.parse(d.candidates[0].content.parts[0].text);
     S.realScripts=(out.scripts||[]).slice(0,3).map((s,i)=>({id:i+1,title:s.title,segment:s.segment,format:s.format,
-      hooks:[s.hook],scenes:s.scenes||[],caption:s.caption,hashtags:s.hashtags||[],duration:s.duration||30,
-      visual:'',video:''}));
+      hooks:(s.hooks&&s.hooks.length?s.hooks:['—']),scenes:s.scenes||[],caption:s.caption,cta:s.cta||'',
+      hashtags:s.hashtags||[],duration:s.duration||35,visual:'',video:''}));
     S.scripts=new Set(S.realScripts.map(s=>s.id));
     S.scriptsLoading=false;unlockUpTo('gen');paint();
-    toast('Сценарии готовы',`Gemini написал ${S.realScripts.length} сценария под «${n.name}»`);
+    toast('Сценарии готовы',`${S.realScripts.length} детальных сценария под «${n.name}» — по живым референсам`);
   }catch(e){S.scriptsLoading=false;paint();toast('Ошибка генерации',humanErr(e));}
 }
 function humanErr(e){
   const s=String(e&&e.message||e);
-  if(s.includes('429'))return 'На Gemini-ключе кончились кредиты/квота — пополни в AI Studio (ai.studio/projects) и повтори.';
+  if(s.includes('429'))return 'Квота ИИ на сегодня исчерпана — попробуй чуть позже.';
   if(s.includes('403')||s.includes('401'))return 'Ключ не принят — проверь его в настройках (иконка ключа сверху).';
   if(s.includes('Failed to fetch'))return 'Сеть/блокировка запроса. Проверь интернет или VPN.';
   return s.slice(0,140);
@@ -737,7 +762,7 @@ function vRefs(){
     const on=S.refs.has(i),c=col(r.score),p=Math.min(r.score,30)/30;
     return `<div class="refc rv ${on?'sel':''}" onclick="tg('refs',${i})">
       <span class="ck">${svg('check')}</span>
-      <div class="th">${r.thumb?`<img src="${r.thumb}" referrerpolicy="no-referrer" loading="lazy" onerror="this.remove()">`:''}
+      <div class="th">${r.thumb?`<img src="https://images.weserv.nl/?url=${encodeURIComponent(r.thumb)}&w=480&fit=cover" referrerpolicy="no-referrer" loading="lazy" onerror="this.src='${r.thumb.replace(/'/g,'')}';this.onerror=()=>this.remove()">`:''}
         <div class="pp"><i onclick="event.stopPropagation();window.open('${r.url}','_blank')" title="Открыть в Instagram">${svg('play')}</i></div>
         <div class="ring"><svg viewBox="0 0 40 40" width="40" height="40">
           <circle class="bgc" cx="20" cy="20" r="17" fill="none" stroke-width="3"/>
@@ -781,7 +806,7 @@ function vScripts(){
   if(S.scriptsLoading){
     return `<div class="rv"><div class="eyebrow"><i></i>шаг 2 · сценарная · live</div>
     <h2 class="vt">Сценарная пишет</h2>
-    <div class="vsub">Gemini читает найденные посты ниши «${curNiche().name}» и пишет 3 сценария под неё — хук, сцены, титры, подпись.</div></div>
+    <div class="vsub">Движок читает залетевшие ролики ниши «${curNiche().name}» и пишет 3 детальных сценария — хуки, сцены, титры, подпись.</div></div>
     <div class="pipe rv"><div class="pstep act"><span class="pi"><span class="spin"></span></span>
       <span class="pt">Анализ трендов ниши → 3 сценария</span><span class="pd">~10–20с</span></div></div>`;
   }
@@ -789,13 +814,13 @@ function vScripts(){
   if(mode()==='real'&&!list.length){
     return `<div class="rv"><div class="eyebrow"><i></i>шаг 2 · сценарная</div>
     <h2 class="vt">Сценариев пока нет</h2>
-    <div class="vsub">Gemini пишет их по живым постам ниши. Если была ошибка — чаще всего дело в ключе или кредитах AI Studio.</div>
+    <div class="vsub">Движок пишет их по живым роликам ниши. Если была ошибка — просто попробуй ещё раз.</div>
     <div style="height:18px"></div>
-    <button class="btn grad" style="margin-left:0" onclick="realScripts()">Написать сценарии · Gemini ${svg('arrow')}</button></div>`;
+    <button class="btn grad" style="margin-left:0" onclick="realScripts()">Написать сценарии ${svg('arrow')}</button></div>`;
   }
   return `<div class="rv"><div class="eyebrow"><i></i>шаг 2 · сценарная${mode()==='real'?' · live':''}</div>
   <h2 class="vt" style="display:flex;align-items:center">Сценарии под бренд
-    ${mode()==='real'?'<span class="demoTag" style="color:var(--mint);background:rgba(87,230,168,.08);border-color:rgba(87,230,168,.25)">написаны Gemini · сейчас</span>':''}</h2>
+    ${mode()==='real'?'<span class="demoTag" style="color:var(--mint);background:rgba(87,230,168,.08);border-color:rgba(87,230,168,.25)">написаны под нишу · сейчас</span>':''}</h2>
   <div class="vsub">Вирусная структура референсов переписана под голос бренда — это адаптация, не копия. Клик — в производство, стрелка — раскадровка.</div></div>
   <div style="height:22px"></div>
   <div class="sgrid">${list.map(s=>{
@@ -807,7 +832,11 @@ function vScripts(){
         <div class="hk">${s.hooks[0]}</div>
         <div class="mt"><span>${s.scenes.length} сцен</span><span>~${s.duration}с</span><span>${s.format.split('(')[0].trim()}</span></div>
       </div>
-      <div class="sb-w"><div class="sb">${s.scenes.map((sc,i)=>`<div class="row"><i>${i+1}</i><span><b>${sc.on}</b> — ${sc.vo}</span></div>`).join('')}</div></div>
+      <div class="sb-w"><div class="sb">
+        ${s.hooks&&s.hooks.length>1?`<div class="row"><i>⚡</i><span><b>Хуки:</b> ${s.hooks.map(h=>`«${h}»`).join(' · ')}</span></div>`:''}
+        ${s.scenes.map((sc,i)=>`<div class="row"><i>${i+1}</i><span><b>${sc.on}</b> — ${sc.vo}${sc.shot?`<br><span style="color:var(--mut);font-size:11px">${sc.shot}</span>`:''}</span></div>`).join('')}
+        ${s.cta?`<div class="row"><i>→</i><span><b>CTA:</b> ${s.cta}</span></div>`:''}
+      </div></div>
       <span class="exp" onclick="event.stopPropagation();document.getElementById('sc${s.id}').classList.toggle('open')">
         раскадровка ${svg('chev')}</span>
     </div>`;}).join('')}</div>`;
@@ -832,8 +861,8 @@ function vGen(){
 }
 function vGenRun(){
   const steps=mode()==='real'
-    ?['Сценарии → промпты кадров','Hero-кадры · nano-banana (live)','Озвучка · Gemini TTS · очередь цеха','Сборка mp4 · ffmpeg · очередь цеха']
-    :['Сценарии → промпты сцен','Генерация кадров и видео','Озвучка · Gemini TTS','Сборка · титры · уникализация'];
+    ?['Сценарии → промпты кадров','Hero-кадры · live','Озвучка · очередь цеха','Сборка mp4 · ffmpeg · очередь цеха']
+    :['Сценарии → промпты сцен','Генерация кадров и видео','Озвучка · TTS','Сборка · титры · уникализация'];
   return `<div class="rv"><div class="eyebrow"><i></i>шаг 3 · цех генерации${mode()==='real'?' · live':''}</div>
   <h2 class="vt">Конвейер работает</h2>
   <div class="vsub">${S.scripts.size} роликов · движок ${D.generators.find(g=>g.id===S.gen)?.name||''}</div></div>
@@ -858,7 +887,7 @@ function vGenDone(){
       </div>
       <div class="vi"><div class="vt2">${s.title}</div><div class="vs">${segShort(s.segment)} · ~${s.duration}с · hero-кадр</div></div>
       </div>`).join('')}</div>
-    <div class="frame-note rv">mp4-ролики (озвучка Gemini TTS + титры + Ken Burns) собирает локальный цех завода — как 6 готовых роликов в демо-нише «Франшиза кофеен».</div>`;
+    <div class="frame-note rv">mp4-ролики (озвучка + титры + Ken Burns) собирает локальный цех завода — как 6 готовых роликов в демо-нише «Франшиза кофеен».</div>`;
   }
   return `<div class="rv"><div class="eyebrow"><i></i>шаг 3 · цех генерации</div>
   <h2 class="vt">Готовые ролики</h2>
@@ -933,7 +962,7 @@ function dock(){
   if(S.view==='refs'&&S.scanned){show=S.refs.size>0;
     html=mode()==='real'
       ?`<span class="di">Выбрано <b>${S.refs.size}</b> референсов</span>
-        <button class="btn white" onclick="unlockUpTo('scripts');go('scripts');setTimeout(realScripts,300)">Сценарии по ним · Gemini ${svg('arrow')}</button>`
+        <button class="btn white" onclick="unlockUpTo('scripts');go('scripts');setTimeout(realScripts,300)">Сценарии по ним ${svg('arrow')}</button>`
       :`<span class="di">Выбрано <b>${S.refs.size}</b> референсов</span>
         <button class="btn white" onclick="S.scripts=new Set(D.scripts.map(s=>s.id));unlockUpTo('scripts');go('scripts')">Сценарии по ним ${svg('arrow')}</button>`;}
   if(S.view==='scripts'){show=S.scripts.size>0;
