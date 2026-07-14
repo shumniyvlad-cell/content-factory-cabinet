@@ -445,28 +445,50 @@ async function realScan(){
   bar.style.width='18%';
   const t0=Date.now();const tick=setInterval(()=>{const el=document.getElementById('elapsed');
     if(el)el.textContent=Math.round((Date.now()-t0)/1000)+'с';},500);
-  ln(`<span class="ac">⋯</span> скрейпинг Instagram <span class="dim">(обычно 8–40с)</span> · <span class="ac" id="elapsed">0с</span>`);
+  ln(`<span class="ac">⋯</span> ступень 1: авторы ниши по хэштегам · <span class="ac" id="elapsed">0с</span>`);
   try{
-    const r=await fetch(`${PROXY}/scan`,
+    // Ступень 1: посты хэштега → уникальные авторы ниши (recent-выдача, метрик почти нет — она только для имён)
+    const r1=await fetch(`${PROXY}/scan`,
       {method:'POST',headers:{'Content-Type':'application/json'},
        body:JSON.stringify({hashtags:tags.slice(0,2),limit:25})});
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    const items=await r.json();clearInterval(tick);bar.style.width='72%';
-    let posts=(Array.isArray(items)?items:[]).filter(i=>i&&i.ownerUsername);
-    posts.sort((a,b)=>((b.videoViewCount||0)-(a.videoViewCount||0))||((b.likesCount||0)-(a.likesCount||0)));
-    const top=posts.slice(0,12);
-    const maxL=Math.max(1,...top.map(p=>p.likesCount||0)),maxV=Math.max(1,...top.map(p=>p.videoViewCount||0));
+    if(!r1.ok)throw new Error('HTTP '+r1.status);
+    const posts=((await r1.json())||[]).filter(i=>i&&i.ownerUsername);
+    bar.style.width='34%';
+    const byAuthor={};
+    posts.forEach(p=>{const u=p.ownerUsername;
+      if(!byAuthor[u]||(p.likesCount||0)>byAuthor[u])byAuthor[u]=p.likesCount||0;});
+    const authors=Object.entries(byAuthor).sort((a,b)=>b[1]-a[1]).map(([u])=>u).slice(0,6);
+    if(!authors.length)throw new Error('по этим хэштегам никого не нашли — попробуй другую формулировку');
+    ln(`<span class="ok">✓</span> авторы ниши: ${authors.map(a=>'@'+a).join(' ')}`);
+    ln(`<span class="ac">⋯</span> ступень 2: тяну их свежие рилсы с просмотрами <span class="dim">(20–60с)</span>`);
+    // Ступень 2: рилсы авторов — только видео, с реальными просмотрами
+    const r2=await fetch(`${PROXY}/reels`,
+      {method:'POST',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({usernames:authors,limit:5})});
+    if(!r2.ok)throw new Error('HTTP '+r2.status);
+    let reels=((await r2.json())||[]).filter(i=>i&&i.ownerUsername&&(i.url||i.shortCode));
+    clearInterval(tick);bar.style.width='84%';
+    const vv=p=>p.videoViewCount||p.videoPlayCount||0;
+    reels.sort((a,b)=>(vv(b)-vv(a))||((b.likesCount||0)-(a.likesCount||0)));
+    let top=reels.slice(0,12);
+    // фолбэк: если рилсов совсем нет — показываем лучшие посты ступени 1, честно без просмотров
+    if(top.length<3){
+      posts.sort((a,b)=>(b.likesCount||0)-(a.likesCount||0));
+      top=posts.slice(0,12);
+      ln(`<span class="dim">рилсов мало — добавил лучшие посты хэштега</span>`);
+    }
+    const maxV=Math.max(1,...top.map(p=>vv(p)||0)),maxL=Math.max(1,...top.map(p=>p.likesCount||0));
     S.realRefs=top.map((p,i)=>({handle:p.ownerUsername,url:p.url||('https://www.instagram.com/p/'+p.shortCode+'/'),
-      views:p.videoViewCount||0,likes:p.likesCount||0,caption:(p.caption||'').slice(0,160),thumb:p.displayUrl||'',
-      score:Math.round(30*Math.max((p.videoViewCount||0)/maxV,(p.likesCount||0)/maxL,(12-i)/12*.4))}));
-    ln(`<span class="ok">✓</span> получено <span class="ac">${posts.length}</span> постов · отобран топ-${top.length} по вовлечению`);
+      views:vv(p),likes:p.likesCount||0,caption:(p.caption||'').slice(0,160),thumb:p.displayUrl||'',
+      score:Math.round(30*Math.max(vv(p)/maxV,(p.likesCount||0)/maxL*.8,(12-i)/12*.3))}));
+    ln(`<span class="ok">✓</span> рилсов с просмотрами: <span class="ac">${top.length}</span> · отранжированы по виральности`);
     ln(`<span class="ok">✓</span> готово за ${Math.round((Date.now()-t0)/1000)}с`);
     bar.style.width='100%';
     setTimeout(()=>{S.scanned=true;S.refs=new Set(S.realRefs.slice(0,6).map((_,k)=>k));
-      unlockUpTo('scripts');paint();toast('Живой скан завершён',`#${tags[0]} · ${top.length} реальных постов из Instagram`);},700);
+      unlockUpTo('scripts');paint();toast('Живой скан завершён',`#${tags[0]} · ${top.length} рилсов авторов ниши`);},700);
   }catch(e){clearInterval(tick);
-    ln(`<span style="color:#e0655a">✗</span> ${String(e.message||e).slice(0,120)}`);
-    ln(`<span class="dim">проверь ключи (иконка ключа сверху) или попробуй другую формулировку ниши</span>`);
+    ln(`<span style="color:#e0655a">✗</span> ${String(e.message||e).slice(0,140)}`);
+    ln(`<span class="dim">попробуй другую формулировку ниши или повтори через минуту</span>`);
   }
 }
 
