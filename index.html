@@ -546,10 +546,52 @@ ${ctx||'(нет контекста)'}
 }
 function humanErr(e){
   const s=String(e&&e.message||e);
+  if(s.includes('402')||s.includes('insufficient credit'))return 'На видео-балансе нет кредитов — пополни replicate.com/account/billing (пары $ хватит на десятки клипов) и повтори через минуту.';
   if(s.includes('429'))return 'Квота ИИ на сегодня исчерпана — попробуй чуть позже.';
-  if(s.includes('403')||s.includes('401'))return 'Ключ не принят — проверь его в настройках (иконка ключа сверху).';
+  if(s.includes('403')||s.includes('401'))return 'Доступ движка не принят — попробуй позже.';
   if(s.includes('Failed to fetch'))return 'Сеть/блокировка запроса. Проверь интернет или VPN.';
   return s.slice(0,140);
+}
+
+/* реальные видео-клипы: SeeDance/Kling через движок завода (Replicate) */
+const VIDEO_ENGINES={seedance:'SeeDance',kling:'Kling'};
+function clipPrompt(s){
+  const n=curNiche();
+  const shots=(s.scenes||[]).slice(0,2).map(sc=>sc.shot).filter(Boolean).join('. ');
+  return `Vertical 9:16 cinematic commercial clip for business niche "${n.name}". ${shots||s.title}. `+
+         `Natural smooth motion, premium lighting, high detail, photorealistic. No text overlays, no captions, no logos.`;
+}
+async function realVideos(){
+  const list=activeScripts().filter(s=>S.scripts.has(s.id));
+  S.realVideos=S.realVideos||{};
+  const pd=()=>document.getElementById('pd1');
+  // старт всех клипов
+  const jobs=[];
+  for(const s of list){
+    const r=await fetch(`${PROXY}/video/start`,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:S.gen,prompt:clipPrompt(s)})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error((d&&(d.detail||d.error))||('video HTTP '+r.status));
+    jobs.push({sid:s.id,id:d.id,done:false});
+  }
+  const t0=Date.now();
+  // поллинг до готовности всех (либо 6 минут)
+  while(jobs.some(j=>!j.done)&&Date.now()-t0<360000){
+    await new Promise(r=>setTimeout(r,8000));
+    for(const j of jobs){
+      if(j.done)continue;
+      try{
+        const st=await fetch(`${PROXY}/video/status?id=${encodeURIComponent(j.id)}`).then(r=>r.json());
+        if(st.status==='succeeded'&&st.url){S.realVideos[j.sid]=st.url;j.done=true;}
+        else if(st.status==='failed'||st.status==='canceled'){j.done=true;j.fail=st.error||'failed';}
+      }catch(e){/* сеть мигнула — продолжаем поллить */}
+    }
+    const ready=jobs.filter(j=>j.done&&!j.fail).length;
+    const el=Math.round((Date.now()-t0)/1000);
+    if(pd())pd().textContent=`готово ${ready}/${jobs.length} · ${el}с`;
+  }
+  const fails=jobs.filter(j=>j.fail);
+  if(fails.length&&!Object.keys(S.realVideos).length)throw new Error(fails[0].fail);
 }
 
 /* реальные hero-кадры: nano-banana (Gemini image) */
@@ -695,7 +737,7 @@ function curNiche(){
   return D.niches.find(x=>x.id===S.niche);
 }
 function resetPipeline(){S.scanned=false;S.refs.clear();S.generated=false;S.generating=false;
-  S.realRefs=null;S.realScripts=null;S.realFrames={};S.scriptsLoading=false;S.scripts=new Set();}
+  S.realRefs=null;S.realScripts=null;S.realFrames={};S.realVideos={};S.scriptsLoading=false;S.scripts=new Set();}
 function pickNiche(id){
   if(S.niche!==id){S.niche=id;resetPipeline();}
   document.getElementById('nichLbl').textContent=curNiche().name;
@@ -849,10 +891,12 @@ function vGen(){
   <h2 class="vt">Чем оживляем</h2>
   <div class="vsub">Видео-движок под ролики или фото-движок под кадры. Себестоимость прогона — центы, дальше конвейер сам.</div></div>
   <div class="glab rv">видео</div>
-  <div class="ggrid">${D.generators.filter(g=>g.kind==='video').map(g=>`
-    <div class="gc rv ${S.gen===g.id?'sel':''}" onclick="S.gen='${g.id}';paint()">
-      ${g.tag==='рекоменд.'?'<span class="rec">выбор завода</span>':''}
-      <h4>${g.name}<span class="kb v">видео</span></h4><p>${g.desc}</p></div>`).join('')}</div>
+  <div class="ggrid">${D.generators.filter(g=>g.kind==='video').map(g=>{
+    const off=mode()==='real'&&!VIDEO_ENGINES[g.id];
+    return `
+    <div class="gc rv ${S.gen===g.id?'sel':''}" style="${off?'opacity:.35;pointer-events:none':''}" onclick="S.gen='${g.id}';paint()">
+      ${off?'<span class="rec" style="background:var(--s3);color:var(--mut)">скоро</span>':(g.tag==='рекоменд.'?'<span class="rec">выбор завода</span>':'')}
+      <h4>${g.name}<span class="kb v">видео</span></h4><p>${g.desc}</p></div>`;}).join('')}</div>
   <div class="glab rv">фото / кадры</div>
   <div class="ggrid">${D.generators.filter(g=>g.kind==='photo').map(g=>`
     <div class="gc rv ${S.gen===g.id?'sel':''}" onclick="S.gen='${g.id}';paint()">
@@ -860,8 +904,11 @@ function vGen(){
       <h4>${g.name}<span class="kb p">фото</span></h4><p>${g.desc}</p></div>`).join('')}</div>`;
 }
 function vGenRun(){
+  const isVid=mode()==='real'&&!!VIDEO_ENGINES[S.gen];
   const steps=mode()==='real'
-    ?['Сценарии → промпты кадров','Hero-кадры · live','Озвучка · очередь цеха','Сборка mp4 · ffmpeg · очередь цеха']
+    ?(isVid
+      ?['Сценарии → промпты клипов','Видео-клипы · live (1–4 мин)','Озвучка · очередь цеха','Титры · уникализация · очередь цеха']
+      :['Сценарии → промпты кадров','Hero-кадры · live','Озвучка · очередь цеха','Сборка mp4 · ffmpeg · очередь цеха'])
     :['Сценарии → промпты сцен','Генерация кадров и видео','Озвучка · TTS','Сборка · титры · уникализация'];
   return `<div class="rv"><div class="eyebrow"><i></i>шаг 3 · цех генерации${mode()==='real'?' · live':''}</div>
   <h2 class="vt">Конвейер работает</h2>
@@ -873,10 +920,27 @@ function vGenRun(){
 }
 function vGenDone(){
   const list=activeScripts().filter(s=>S.scripts.has(s.id));
+  if(mode()==='real'&&S.realVideos&&Object.keys(S.realVideos).length){
+    const eng=D.generators.find(g=>g.id===S.gen)?.name||'видео';
+    return `<div class="rv"><div class="eyebrow"><i></i>шаг 3 · цех генерации · live</div>
+    <h2 class="vt" style="display:flex;align-items:center">Клипы готовы
+      <span class="demoTag" style="color:var(--mint);background:rgba(87,230,168,.08);border-color:rgba(87,230,168,.25)">${eng} · сейчас</span></h2>
+    <div class="vsub">Сгенерированы вживую под «${curNiche().name}» по твоим сценариям. Озвучка, титры и уникализация — в очереди цеха.</div></div>
+    <div style="height:22px"></div>
+    <div class="vgrid">${list.map(s=>`
+      <div class="vc rv"><div class="vw">
+        ${S.realVideos[s.id]
+          ?`<video controls playsinline preload="metadata" src="${S.realVideos[s.id]}" style="width:100%;height:100%;object-fit:cover;display:block"></video>`
+          :`<div style="position:absolute;inset:0;display:grid;place-items:center;color:var(--mut);font-family:var(--mono);font-size:11px">клип не сгенерился</div>`}
+      </div>
+      <div class="vi"><div class="vt2">${s.title}</div><div class="vs">${segShort(s.segment)} · ${eng} · 5с · 720p</div></div>
+      </div>`).join('')}</div>
+    <div class="frame-note rv">Это сырые клипы движка. Полный ролик (озвучка + титры + склейка сцен) собирает цех завода.</div>`;
+  }
   if(mode()==='real'){
     return `<div class="rv"><div class="eyebrow"><i></i>шаг 3 · цех генерации · live</div>
     <h2 class="vt" style="display:flex;align-items:center">Hero-кадры готовы
-      <span class="demoTag" style="color:var(--mint);background:rgba(87,230,168,.08);border-color:rgba(87,230,168,.25)">nano-banana · сейчас</span></h2>
+      <span class="demoTag" style="color:var(--mint);background:rgba(87,230,168,.08);border-color:rgba(87,230,168,.25)">кадры · сейчас</span></h2>
     <div class="vsub">Кадры сгенерированы вживую под «${curNiche().name}». Озвучка и сборка mp4 — задачи локального цеха (ffmpeg), они уже в очереди.</div></div>
     <div style="height:22px"></div>
     <div class="vgrid">${list.map(s=>`
@@ -920,7 +984,13 @@ async function realGenRun(){
       const pd=document.getElementById('pd'+i);if(pd&&!pd.textContent.includes('очеред'))pd.textContent='готово';}};
   await new Promise(r=>setTimeout(r,350));
   mark(0,true);await new Promise(r=>setTimeout(r,800));mark(0,false);
-  mark(1,true);await realFrames();mark(1,false);
+  mark(1,true);
+  try{
+    if(VIDEO_ENGINES[S.gen])await realVideos();else await realFrames();
+  }catch(e){
+    S.generating=false;paint();toast('Видео не запустилось',humanErr(e));return;
+  }
+  mark(1,false);
   for(const i of[2,3]){mark(i,true);await new Promise(r=>setTimeout(r,700));
     document.getElementById('pd'+i).textContent='в очереди цеха';mark(i,false);}
   finishGen();
